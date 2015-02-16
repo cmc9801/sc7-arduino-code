@@ -3,6 +3,7 @@
 //#define DEBUG
 
 #include <SPI.h>
+#include "CAN_interact.h"
 #include "CAN_experimenting.h"
 
 #define CANINT 5
@@ -38,8 +39,9 @@ void setup()
 
 void loop()
 {
+  CANinteract::runCommands(can.controller);
   //Read switch position from serial
-    if (Serial.available())
+    /*if (Serial.available())
     {
        switchpos = (Serial.read() == '1') ? 0x0040 : 0x0020 ;
     }
@@ -98,7 +100,7 @@ void loop()
 		  Serial.print("Buffer Count:");
 		  Serial.println(can.RXbuffer.size());
 		}
-	}
+	}*/
 }
 
 //Function for reading "pedal" data

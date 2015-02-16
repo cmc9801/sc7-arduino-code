@@ -1,13 +1,13 @@
 /* This library can be used to add debug interactivity to the MCP2515 Arduino CAN bus. It works with a serial interface, allowing 
 the user to send commands to control the MCP2515. The types of operations currently supported are:
 
- r - Read specific memory address.
- b - Read the status buffer.
- x - Read the RXstatus buffer.
+ r - read specific memory address.
+ b - read the status buffer.
+ x - read the RXstatus buffer.
  w - Write to a specific memory address.
  L - Load a Can packet.
  S - Send a Can Packet.
- R - Read an RX buffer.
+ R - read an RX buffer.
  m - Set mode ([n]ormal, [c]onfig, [l]oopback, L[i]sten only)
 
  To read a register
@@ -19,33 +19,39 @@ the user to send commands to control the MCP2515. The types of operations curren
  */
 
  #include "sc7-can-libinclude.h"
-
- #define ERROR "COMMAND ERROR";
+ #define EOC "UNEXPECTED END OF COMMAND"
 
  namespace CANinteract
  {
-
+        inline void _error(String str)
+        {
+          Serial.println("\n" + str);
+        }
+        
  	void mode(MCP2515& c)
  	{
+                char mmode;
  		if (Serial.available())
- 			char mode = Serial.Read(); // Read the next char after the command.
- 		else throw ERROR;
-
+ 		   mmode = Serial.read(); // read the next char after the command.
+ 		else _error(EOC);
  		byte actualmode = 0;
- 		switch (mode)
+ 		switch (mmode)
  		{
  			case 'n': actualmode = MODE_NORMAL; break;
  			case 'c': actualmode = MODE_CONFIG; break;
  			case 'l': actualmode = MODE_LOOPBACK; break;
  			case 'i': actualmode = MODE_LISTEN; break;
- 			default : throw "INVALID MODE"; break;
+ 			default : _error("INVALID MODE"); return;
  		}
  		bool result = c.Mode(actualmode);
  		if (result)
  		{
- 			Serial.println("Mode set to " + mode + " successfully");
+ 			Serial.print("Mode set to ");
+                        Serial.print(mmode);
+                        Serial.println(" successfully");
  		} else {
- 			Serial.println("Failed to set mode to " + mode);
+ 			Serial.print("Failed to set mode to ");
+                        Serial.println(mmode);
  		}
  	}
 
@@ -71,23 +77,23 @@ the user to send commands to control the MCP2515. The types of operations curren
  	{
  		Frame f;
  		if (Serial.available())
-			f.id = Serial.Read();
-		else throw ERROR;
+			f.id = Serial.read();
+		else _error(EOC);
  		f.id << 8;
  		if (Serial.available())
- 			f.id |= Serial.Read();
- 		else throw ERROR;
+ 			f.id |= Serial.read();
+ 		else _error(EOC);
 
  		if (Serial.available()
- 			  && Serial.Read() == ',')
+ 			  && Serial.read() == ',')
  		{
  			for (byte i = 0; i < 8; i++)
  			{
  				if (Serial.available())
- 					f.data[i] = Serial.Read();
+ 					f.data[i] = Serial.read();
  			}
  		}
- 		else throw ERROR;
+ 		else _error(EOC);
 
  		Serial.readStringUntil('.');
 
@@ -96,9 +102,10 @@ the user to send commands to control the MCP2515. The types of operations curren
 
  	void load(MCP2515& c)
  	{
- 		if (Serial.available()
- 			char buffernum = Serial.Read();
- 		else throw "MISSING BUFFER NUMBER";
+ 		char buffernum;
+ 		if (Serial.available())
+ 			 buffernum = Serial.read();
+ 		else _error("MISSING BUFFER NUMBER");
 
  		byte buf;
  		switch (buffernum)
@@ -106,17 +113,18 @@ the user to send commands to control the MCP2515. The types of operations curren
  			case '0': buf = TXB0; break;
  			case '1': buf = TXB1; break;
  			case '2': buf = TXB2; break;
- 			default: throw "INVALID TX BUFFER";
+ 			default: _error("INVALID TX BUFFER"); return;
  		}
 
- 		c.LoadBuffer(getframe(),buf);
+ 		c.LoadBuffer(buf,getframe());
  	}
 
  	void send(MCP2515& c)
  	{
- 		if (Serial.available()
- 			char buffernum = Serial.Read();
- 		else throw "MISSING BUFFER NUMBER";
+ 		char buffernum;
+ 		if (Serial.available())
+ 			 buffernum = Serial.read();
+ 		else _error("MISSING BUFFER NUMBER");
 
  		byte buf;
  		switch (buffernum)
@@ -124,20 +132,71 @@ the user to send commands to control the MCP2515. The types of operations curren
  			case '0': buf = TXB0; break;
  			case '1': buf = TXB1; break;
  			case '2': buf = TXB2; break;
- 			default: throw "INVALID TX BUFFER";
+ 			default: _error("INVALID TX BUFFER"); return;
  		}
 
  		c.SendBuffer(buf);
  	}
 
+ 	void readrx(MCP2515& c)
+ 	{
+                char buffernum;
+ 		if (Serial.available())
+ 			 buffernum = Serial.read();
+ 		else _error("MISSING BUFFER NUMBER");
+
+ 		byte buf;
+ 		switch (buffernum)
+ 		{
+ 			case '0': buf = RXB0; break;
+ 			case '1': buf = RXB1; break;
+ 			default: _error("INVALID RX BUFFER"); return;
+ 		}
+
+ 		c.ReadBuffer(buf);
+ 	}
+          
  	void read(MCP2515& c)
  	{
  		String regName;
+ 		byte buf;
+ 		bool readRXbuffer = false;
  		regName = Serial.readStringUntil('.');
 
- 		switch (regName)
+ 		if (regName == "CANSTAT")
+                  buf = CANSTAT;
+                else if (regName == "CANCTRL")
+                  buf = CANCTRL;
+                else if (regName == "CANINTF")
+                  buf = CANINTF;
+                else if (regName == "CANINTE")
+                  buf = CANINTE;
+                else if (regName == "EFLG")
+                  buf = EFLG;
+                else _error("INVALID REGISTER");
+
+ 		Serial.print(regName + " contains ");
+ 		Serial.println(c.Read(buf),BIN);
+ 	}
+
+ 	void runCommands(MCP2515& c)
+ 	{
+ 		byte command;
+ 		if (Serial.available())
  		{
- 			case ""
+ 			command = Serial.read();
+
+ 				switch (command)
+	 			{
+	 				case 'r': read(c); 		break;
+	 				case 'b': status(c); 	break;
+	 				case 'x': rxstatus(c);  break;
+	 				case 'w': Serial.println("Not Implemented Yet"); break;
+	 				case 'L': load(c);		break;
+	 				case 'S': send(c);		break;
+	 				case 'm': mode(c);		break;
+	 				case 'R': readrx(c);	break;
+	 			};
  		}
  	}
  }
