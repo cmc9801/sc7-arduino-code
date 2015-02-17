@@ -25,7 +25,7 @@ the user to send commands to control the MCP2515. The types of operations curren
  {
         inline void _error(String str)
         {
-          Serial.println("\n" + str);
+          Serial.println(str);
         }
         
  	void mode(MCP2515& c)
@@ -106,6 +106,11 @@ the user to send commands to control the MCP2515. The types of operations curren
  		if (Serial.available())
  			 buffernum = Serial.read();
  		else _error("MISSING BUFFER NUMBER");
+                 
+                if (Serial.available() && Serial.read() != ',')
+                {
+                  _error("INVALID BUFFER NUMBER");
+                }
 
  		byte buf;
  		switch (buffernum)
@@ -182,9 +187,10 @@ the user to send commands to control the MCP2515. The types of operations curren
  	void runCommands(MCP2515& c)
  	{
  		byte command;
- 		if (Serial.available())
+ 		do ; while (!Serial.available());
  		{
  			command = Serial.read();
+                        delay(10);
 
  				switch (command)
 	 			{
@@ -196,7 +202,10 @@ the user to send commands to control the MCP2515. The types of operations curren
 	 				case 'S': send(c);		break;
 	 				case 'm': mode(c);		break;
 	 				case 'R': readrx(c);	break;
-	 			};
+                                        default : Serial.println("INVALID COMMAND");
+                                }
+                                Serial.readStringUntil('.');
+                                
  		}
  	}
  }

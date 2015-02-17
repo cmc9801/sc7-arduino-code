@@ -32,6 +32,8 @@ void setup()
     filter.setRB0(MASK_NONE,DC_DRIVE_ID,0);
     filter.setRB1(MASK_NONE,DC_SWITCHPOS_ID,0,0,0);
     can.Setup(filter, &errors);
+    
+    WDT_Disable(WDT);
 #ifdef DEBUG
 	Serial.println(errors, BIN);
 #endif
@@ -39,14 +41,16 @@ void setup()
 
 void loop()
 {
+  delay(10);
+  Serial.println("Enter New Command:");
   CANinteract::runCommands(can.controller);
   //Read switch position from serial
-    /*if (Serial.available())
+    if (Serial.available())
     {
        switchpos = (Serial.read() == '1') ? 0x0040 : 0x0020 ;
     }
     
-    if (digitalRead(12)== LOW) // if the transmit button is pressed
+    //if (digitalRead(12)== LOW) // if the transmit button is pressed
     {
 		read_ins();
 		can.Send(DC_Drive(100.0,Status.current),TXB0);
@@ -71,7 +75,7 @@ void loop()
 #endif
     }
 	
-	while (can.Available())
+	/*while (can.Available())
 	{
 		Frame& f = can.Read();
 		char str[50];
