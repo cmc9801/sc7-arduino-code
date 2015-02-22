@@ -27,6 +27,18 @@ the user to send commands to control the MCP2515. The types of operations curren
         {
           Serial.println(str);
         }
+
+        inline byte SerialReadHex()
+        {
+          char a, b;
+          if (Serial.available())
+          a = Serial.read(); // read the next char after the command.
+          else _error(EOC);
+          if (Serial.available())
+          b = Serial.read(); // read the next char after the command.
+          else _error(EOC);
+          return a<< 8 & b;
+        }
         
  	void mode(MCP2515& c)
  	{
