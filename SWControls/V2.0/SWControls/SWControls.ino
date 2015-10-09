@@ -1,9 +1,9 @@
-#include "sc7-can-libinclude.h"
+#include <CAN_IO.h>
 #include <Metro.h>
 #include <Switch.h>
 #include <serLCD.h>
-#include <avr/wdt.h>
 #include <SPI.h>
+#include <avr/wdt.h>
 #include <math.h>
 
 //#define LOOPBACK
