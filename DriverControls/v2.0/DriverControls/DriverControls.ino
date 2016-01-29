@@ -124,7 +124,8 @@ struct CarState {
   bool rightTurn;     // true if driver wants right turn on (no toggle)
   bool leftTurn;      // true if driver wants left turn on (no toggle)
   bool hazards;       // true if driver wants hazards on (no toggle)
-  //bool cruiseCtrl;    // true if driver wants cruise control on
+  bool cruiseCtrlOn;  // true if driver wants cruise control on
+  bool cruiseCtrlOff; // true fi driver wants cruise control off
   
   // motor info
   float motorVelocity;  // rotational speed of motor (rpm)
@@ -157,9 +158,9 @@ struct CarState {
   float regenCurrent;   // current to use if in regen
                     
   // cruise control
-  //bool cruiseCtrlOn;     // true if cruise control should be active
-  //bool cruiseCtrlPrev;   // prev value of cruiseCtrl
-  //float cruiseCtrlRatio; // pedal ratio to use if cruise control active
+  bool cruiseCtrl;       // true if cruise control should be active
+  bool cruiseCtrlPrev;   // true if cruise control was on in previous iteration
+  float cruiseCtrlRatio; // pedal ratio to use if cruise control active
                     
   // gearing and ignition
   GearState gear;         // brake, foward, reverse, regen, neutral
@@ -244,14 +245,15 @@ void readInputs() {
       state.gearRaw = FORWARD_RAW;
     }
     
-    // read lights
+    // read lights/horn
     state.rightTurn = digitalRead(RIGHT_TURN_SW_PIN) == LOW;
     state.leftTurn = digitalRead(LEFT_TURN_SW_PIN) == LOW;
     state.headlights = digitalRead(HEADLIGHT_SW_PIN) == LOW;
     state.hazards = digitalRead(HAZARDS_SW_PIN) == LOW;
-    
-    // other
     state.horn = digitalRead(HORN_SW_PIN) == LOW;
+
+    // disable cruise control
+    state.cruiseCtrl = false;
   }
 }
 
@@ -298,15 +300,13 @@ void readCAN() {
       
       // read data
       state.gearRaw =    packet.gear;
-      state.horn =      (packet.horn == SW_ON_BIT);
-      state.rightTurn = (packet.rts == SW_ON_BIT);
-      state.leftTurn =  (packet.lts == SW_ON_BIT);
-      state.headlights =(packet.headlights == SW_ON_BIT);
-      state.hazards =   (packet.hazards == SW_ON_BIT);
-      
-      // read cruise control
-      //state.cruiseCtrlPrev = state.cruiseCtrl;
-      //state.cruiseCtrl = (packet.cruisectrl == SW_ON_BIT);
+      state.horn =          (packet.horn == SW_ON_BIT);
+      state.rightTurn =     (packet.rts == SW_ON_BIT);
+      state.leftTurn =      (packet.lts == SW_ON_BIT);
+      state.headlights =    (packet.headlights == SW_ON_BIT);
+      state.hazards =       (packet.hazards == SW_ON_BIT);
+      state.cruiseCtrlOn =  (packet.cruisectrlon == SW_ON_BIT);
+      state.cruiseCtrlOff = (packet.cruisectrloff == SW_ON_BIT);
     }
     else if (f.id == BMS_VOLT_CURR_ID) { // BMS Voltage Current Packet
       BMS_VoltageCurrent packet(f);
@@ -416,17 +416,13 @@ void updateState() {
   }
   
   // update cruise control state
-  //if (!state.cruiseCtrlPrev && state.cruiseCtrl) { // cruise control just switched on
-  //  state.cruiseCtrlOn = true;
-  //  state.cruiseCtrlRatio = state.accelRatio;
-  //}
-  //if (state.gear == BRAKE || state.gear == REGEN ||
-  //         !state.cruiseCtrl) { // regen pedal pressed or cruise control switched off
-  //  state.cruiseCtrlOn = false;
-  //  state.cruiseCtrlPrev = true; // covers edge case where cruise control goes from off to on, 
-  //                               // then brake is pressed and released before next packet comes in
-  //                               // without this line, cruise control would come back on when brake is released
-  //}
+  if (state.cruiseCtrlOn) { // cruise control not on, but driver wants on
+   state.cruiseCtrl = true;
+   state.cruiseCtrlRatio = state.accelRatio;
+  }
+  if (state.gear != FORWARD || state.cruiseCtrlOff) { // not in forward or driver wants cruise off
+   state.cruiseCtrl = false;
+  }
   
   // update current values to be sent to motor controller
   state.regenCurrent = state.regenRatio < MIN_PEDAL_TOLERANCE ? 
@@ -436,16 +432,11 @@ void updateState() {
                        0 : 
                        state.accelRatio; 
   
-  //if (state.cruiseCtrlOn) { // cruise control on, make sure that current doesn't fall below cruise control ratio
-  //  state.accelCurrent = state.accelRatio < state.cruiseCtrlRatio ? 
-  //                       state.cruiseCtrlRatio : 
-  //                       state.accelRatio;
-  //}
-  //else { // no cruise control, take pedal value (or 0 if below tolerance)
-  //  state.accelCurrent = state.accelRatio < MIN_PEDAL_TOLERANCE ? 
-  //                       0 : 
-  //                       state.accelRatio;
-  //}
+  if (state.cruiseCtrl) { // cruise control on, set to cruise control ratio
+   state.accelCurrent = state.cruiseCtrlRatio < MIN_PEDAL_TOLERANCE ?
+                        0 :
+                        state.cruiseCtrlRatio;
+  }
   
   // check for trip current condition from BMS
   if (state.updateCurrentBufferRequested)
