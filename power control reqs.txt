@@ -1,0 +1,19 @@
+takes current from pedal position
+two buttons, cruise on/off
+activated/updated by cruise on
+deactivated by brake, cruise off
+error handling for steering wheel off (turned off)
+
+simple on/off with buttons
+add setpoint update and brake deactivation
+
+TODOS:
+
+test arduino library
+restructure directory (CAN)
+experiment with ignition switch
+collect dependencies in one location (Metro, SerLCD, Switch)
+test teensy
+have steering wheel report liveness of DC/MC/BMS/TEL
+impl lap timer
+test cruise control
