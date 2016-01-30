@@ -11,6 +11,7 @@
 #include "steering-defs.h"
 
 //------------------------------CONSTANTS----------------------------//
+
 // debugging
 const bool DEBUG       = true;    // change to true to output debug info over serial
 const int  SERIAL_BAUD = 115200;  // baudrate for serial (maximum)
@@ -95,6 +96,7 @@ const uint16_t BMS_OVER_CURR = 0x10; // Detected BMS overcurrent, tripped car.
 const uint16_t RESET_MCP2515 = 0x20; // Had to reset the MCP2515
 
 //----------------------------TYPE DEFINITIONS------------------------//
+
 /*
  * Enum to represet the possible gear states.
  */
@@ -109,7 +111,7 @@ enum IgnitionState { Ignition_Start = 0x0040, Ignition_Run = 0x0020, Ignition_Pa
  * Struct to hold informations about the car state.
  */
 struct CarState {
-  // RAW DATA
+  //-----------RAW DATA----------//
   // pedals
   bool brakeEngaged;
   unsigned long brakeCountRaw; // internal counter use for de-noising
@@ -148,7 +150,7 @@ struct CarState {
   byte canstat_reg;    // holds value of canstat register on the MCP2515
   int SW_timer_reset_by;
   
-  // DERIVED DATA
+  //-----------DERIVED DATA-----------//
   // pedals
   float accelRatio; // ratio of accel voltage to max voltage, constrained for safety
   float regenRatio; // ratio of regen voltage to max voltage, constrained for safety
@@ -159,7 +161,6 @@ struct CarState {
                     
   // cruise control
   bool cruiseCtrl;       // true if cruise control should be active
-  bool cruiseCtrlPrev;   // true if cruise control was on in previous iteration
   float cruiseCtrlRatio; // pedal ratio to use if cruise control active
                     
   // gearing and ignition
@@ -177,6 +178,7 @@ struct CarState {
 };
 
 //----------------------------DATA/VARIABLES---------------------------//
+
 // CAN variables
 CAN_IO canControl(CS_PIN, INTERRUPT_PIN, BAUD_RATE, FREQ);
 
@@ -204,6 +206,7 @@ int loopCount = 0;
 
 
 //--------------------------HELPER FUNCTIONS--------------------------//
+
 /*
  * Reads general purpose input and updates car state.
  */
@@ -299,14 +302,14 @@ void readCAN() {
       SW_Data packet(f);
       
       // read data
-      state.gearRaw =    packet.gear;
+      state.gearRaw =        packet.gear;
       state.horn =          (packet.horn == SW_ON_BIT);
       state.rightTurn =     (packet.rts == SW_ON_BIT);
       state.leftTurn =      (packet.lts == SW_ON_BIT);
       state.headlights =    (packet.headlights == SW_ON_BIT);
       state.hazards =       (packet.hazards == SW_ON_BIT);
-      state.cruiseCtrlOn =  (packet.cruisectrlon == SW_ON_BIT);
-      state.cruiseCtrlOff = (packet.cruisectrloff == SW_ON_BIT);
+      state.cruiseCtrlOn =  (packet.cruiseon == SW_ON_BIT);
+      state.cruiseCtrlOff = (packet.cruiseoff == SW_ON_BIT);
     }
     else if (f.id == BMS_VOLT_CURR_ID) { // BMS Voltage Current Packet
       BMS_VoltageCurrent packet(f);
@@ -551,7 +554,7 @@ void writeCAN() {
     DC_Info packet(state.accelRatio, state.regenRatio, state.brakeEngaged,
                             state.canErrorFlags, state.dcErrorFlags, state.wasReset, 
                             ((state.ignition != Ignition_Park) ? true : false), // fuel door, which we use to control the BMS since the ignition switch doesn't work.
-                            state.gear, state.ignition);
+                            state.gear, state.ignition, state.cruiseCtrl);
                             
     bool trysend = canControl.SendVerified(packet, TXBANY);
     
@@ -607,6 +610,7 @@ void checkErrors() {
 }
 
 //--------------------------MAIN FUNCTIONS---------------------------//
+
 void setup() {
   // setup pin I/O
   pinMode(IGNITION_PIN, INPUT_PULLUP);
