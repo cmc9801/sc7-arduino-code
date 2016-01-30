@@ -12,7 +12,6 @@ TODOS:
 test arduino library
 restructure directory (CAN)
 experiment with ignition switch
-collect dependencies in one location (Metro, SerLCD, Switch)
 test teensy
 have steering wheel report liveness of DC/MC/BMS/TEL
 impl lap timer

@@ -380,8 +380,14 @@ void loop() {
         CAN_RX.reset();
         break;
       }
-      case TELM_HEARTBEAT_ID: {
-        steering_wheel.telemetrydisplay = 'T';
+      case TEL_STATUS_ID: {
+        TEL_Status packet(f);
+        if (packet.sql_connected && packet.com_connected) {
+          steering_wheel.telemetrydisplay = 'T';
+        }
+        else {
+          steering_wheel.telemetrydisplay = ' ';
+        }
         telmetry_timer.reset();
         break;
       }
