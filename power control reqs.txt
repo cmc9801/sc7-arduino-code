@@ -4,9 +4,6 @@ activated/updated by cruise on
 deactivated by brake, cruise off
 error handling for steering wheel off (turned off)
 
-simple on/off with buttons
-add setpoint update and brake deactivation
-
 TODOS:
 
 test arduino library

@@ -17,7 +17,7 @@ const bool DEBUG       = true;    // change to true to output debug info over se
 const int  SERIAL_BAUD = 115200;  // baudrate for serial (maximum)
 
 // pins
-const byte IGNITION_PIN   = 49;
+const byte IGNITION_PIN   = 44;
 const byte BRAKE_PIN      = 9;
 const byte ACCEL_PIN      = A0;
 const byte REGEN_PIN      = A1;
@@ -40,7 +40,7 @@ const uint16_t RXF1      = BMS_VOLT_CURR_ID; // Can't put 0 here, otherwise it w
 
 const uint16_t RXM1      = MASK_Sxxx;
 const uint16_t RXF2      = SW_DATA_ID;
-const uint16_t RXF3      = 0; // Most useless: replace first (soc not used by DC currently)
+const uint16_t RXF3      = TEL_STATUS_ID;
 const uint16_t RXF4      = MC_VELOCITY_ID;
 const uint16_t RXF5      = MC_BUS_STATUS_ID; //Also kinda useless right now since we read BMS current.
 
@@ -48,6 +48,7 @@ const uint16_t RXF5      = MC_BUS_STATUS_ID; //Also kinda useless right now sinc
 const uint16_t MC_HB_INTERVAL    = 1000;  // motor controller heartbeat
 const uint16_t SW_HB_INTERVAL    = 1000;  // steering wheel heartbeat
 const uint16_t BMS_HB_INTERVAL   = 1000;  // bms heartbeat
+const uint16_t TEL_HB_INTERVAL   = 1500;  // telemetry heartbeat
 const uint16_t DC_DRIVE_INTERVAL = 150;   // drive command packet
 const uint16_t DC_INFO_INTERVAL  = 150;   // driver controls info packet
 const uint16_t DC_HB_INTERVAL    = 1000;  // driver controls heartbeat packet
@@ -91,9 +92,10 @@ const int   OVERCURRENTS_ALLOWED        = 7;     // max number of overcurrent va
 const uint16_t MC_TIMEOUT  = 0x01; // motor controller timed out
 const uint16_t BMS_TIMEOUT = 0x02; // bms timed out
 const uint16_t SW_TIMEOUT  = 0x04; // sw timed out
-const uint16_t SW_BAD_GEAR = 0x08; // bad gearing from steering wheel
-const uint16_t BMS_OVER_CURR = 0x10; // Detected BMS overcurrent, tripped car.
-const uint16_t RESET_MCP2515 = 0x20; // Had to reset the MCP2515
+const uint16_t TEL_TIMEOUT = 0x08; // telemetry timed out
+const uint16_t SW_BAD_GEAR = 0x10; // bad gearing from steering wheel
+const uint16_t BMS_OVER_CURR = 0x20; // Detected BMS overcurrent, tripped car.
+const uint16_t RESET_MCP2515 = 0x40; // Had to reset the MCP2515
 
 //----------------------------TYPE DEFINITIONS------------------------//
 
@@ -189,6 +191,7 @@ CarState state;
 Metro mcHbTimer(MC_HB_INTERVAL);       // motor controller heartbeat
 Metro swHbTimer(SW_HB_INTERVAL);       // steering wheel heartbeat
 Metro bmsHbTimer(BMS_HB_INTERVAL);     // bms heartbeat
+Metro telHbTimer(TEL_HB_INTERVAL);     // telemetry heartbeat
 Metro dcDriveTimer(DC_DRIVE_INTERVAL); // motor controller send packet
 Metro dcInfoTimer(DC_INFO_INTERVAL);   // steering wheel send packet
 Metro dcHbTimer(DC_HB_INTERVAL);       // driver controls heartbeat
@@ -283,6 +286,10 @@ void readCAN() {
       state.dcErrorFlags &= ~SW_TIMEOUT; // clear flag
       state.SW_timer_reset_by = f.id;
     }
+    else if ((f.id & MASK_Sx00) == TEL_BASEADDRESS) { // source is tel
+      telHbTimer.reset();
+      state.dcErrorFlags &= ~TEL_TIMEOUT; // clear flag
+    }
     
     // check for specific packets
     if (f.id == MC_BUS_STATUS_ID) { // motor controller bus status
@@ -316,9 +323,6 @@ void readCAN() {
       state.bmsCurrent = packet.current;
       state.updateCurrentBufferRequested = true;
     }
-    else if (DEBUG) {
-      Serial.print("Unk. Packet: "); Serial.println(frameToString(f));
-    }
   }
 }
 
@@ -340,6 +344,11 @@ void checkTimers() {
   // check steering wheel
   if (swHbTimer.check()) { // steering wheel timeout
     state.dcErrorFlags |= SW_TIMEOUT; // set flag
+  }
+  
+  // check telemetry
+  if (telHbTimer.check()) { // telemetry timeout
+    state.dcErrorFlags |= TEL_TIMEOUT; // set flag
   }
 }
 
@@ -534,8 +543,9 @@ void writeCAN() {
     bool trysend = canControl.Send(DC_Drive(MCvelocity, MCcurrent), TXBANY);
     
     // reset timer
-    if (trysend) 
+    if (trysend) {
       dcDriveTimer.reset();
+    }
 
   }
   
@@ -682,41 +692,18 @@ void loop() {
     loopStartTime = micros();
   }
   
-  // clear watchdog timer
-  WDT_Restart(WDT);
-  
-  // read GPIO
-  readInputs();
-
-  // get any CAN messages that have come in
-  canControl.Fetch();
-    
-  // read CAN
-  readCAN();
-  
-  // clear watchdog timer
-  WDT_Restart(WDT);
-  
-  // check timers
-  checkTimers();
-  
-  // process information that was read
-  updateState();
-
-  // get any CAN messages that have come in 
-  canControl.Fetch();
-  
-  // write GPIO
-  writeOutputs();
-  
-  // write CAN
-  writeCAN();
-
-  // clear watchdog timer
-  WDT_Restart(WDT);
-
-  // check for errors and fix them
-  checkErrors();
+  WDT_Restart(WDT); // clear watchdog timer
+  readInputs(); // read GPIO
+  canControl.Fetch(); // get any CAN messages that have come in
+  readCAN(); // read CAN
+  WDT_Restart(WDT); // clear watchdog timer
+  checkTimers(); // check timers
+  updateState(); // process information that was read
+  canControl.Fetch(); // get any CAN messages that have come in 
+  writeOutputs(); // write GPIO
+  writeCAN(); // write CAN
+  WDT_Restart(WDT); // clear watchdog timer
+  checkErrors(); // check for errors and fix them
   
   // Add the loop time to the sum time
   if (DEBUG) { 
