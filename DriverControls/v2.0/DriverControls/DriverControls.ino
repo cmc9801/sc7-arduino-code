@@ -8,7 +8,6 @@
 #include <Metro.h>
 #include <SPI.h>
 #include "sc7-can-libinclude.h"
-#include "steering-defs.h"
 
 //------------------------------CONSTANTS----------------------------//
 
@@ -33,29 +32,33 @@ const byte BOARDLED       = 13;
 // CAN parameters
 const uint16_t BAUD_RATE = 1000;
 const byte     FREQ      = 16;
+const int      MAX_CAN_PACKETS_PER_LOOP = 10; // Maximum number of receivable CAN packets per loop
+const uint16_t DC_ID               = 0x00C7;  // For SC7
+const uint16_t DC_SER_NO           = 0x0042;  // Don't panic!
 
 const uint16_t RXM0      = MASK_Sxxx;
-const uint16_t RXF0      = 0; // Match any steering_wheel packet (because mask is Sx00)
-const uint16_t RXF1      = BMS_VOLT_CURR_ID; // Can't put 0 here, otherwise it will match all packets that start with 0.
+const uint16_t RXF0      = 0;
+const uint16_t RXF1      = BMS_VOLT_CURR_ID;
 
 const uint16_t RXM1      = MASK_Sxxx;
 const uint16_t RXF2      = SW_DATA_ID;
 const uint16_t RXF3      = TEL_STATUS_ID;
 const uint16_t RXF4      = MC_VELOCITY_ID;
-const uint16_t RXF5      = MC_BUS_STATUS_ID; //Also kinda useless right now since we read BMS current.
+const uint16_t RXF5      = MC_BUS_STATUS_ID;
 
 // timer intervals (all in ms)
 const uint16_t MC_HB_INTERVAL    = 1000;  // motor controller heartbeat
-const uint16_t SW_HB_INTERVAL    = 1000;  // steering wheel heartbeat
+const uint16_t SW_HB_INTERVAL    = 1500;  // steering wheel heartbeat
 const uint16_t BMS_HB_INTERVAL   = 1000;  // bms heartbeat
 const uint16_t TEL_HB_INTERVAL   = 1500;  // telemetry heartbeat
 const uint16_t DC_DRIVE_INTERVAL = 150;   // drive command packet
 const uint16_t DC_INFO_INTERVAL  = 150;   // driver controls info packet
+const uint16_t DC_STAT_INTERVAL  = 150;   // driver controls status packet
 const uint16_t DC_HB_INTERVAL    = 1000;  // driver controls heartbeat packet
 const uint16_t DC_POWER_INTERVAL = 1000;  // driver controls power packet
 const uint16_t WDT_INTERVAL      = 5000;  // watchdog timer
 const uint16_t TOGGLE_INTERVAL   = 500;   // toggle interval for right/left turn signals, hazards
-const uint16_t DEBUG_INTERVAL    = 333;   // interval for debug calls output
+const uint16_t DEBUG_INTERVAL    = 500;   // interval for debug calls output
 
 // drive parameters
 const uint16_t MAX_ACCEL_VOLTAGE   = 1024;    // max possible accel voltage
@@ -69,10 +72,7 @@ const float    REVERSE_VELOCITY    = -100.0f; // velocity to use if reverse
 const float    MAX_MOTOR_CURRENT   = 1.0;     // sent to the motor to set the maximum amount of current to draw
 const float    GEAR_CHANGE_CUTOFF  = 5.0f;    // cannot change gear unless velocity is below this threshold
 const float    M_PER_SEC_TO_MPH    = 2.237f;  // conversion factor from m/s to mph
-const int      MAX_CAN_PACKETS_PER_LOOP = 10; // Maximum number of receivable CAN packets per loop
 const bool     ENABLE_REGEN        = false;   // flag to enable/disable regen
-const uint16_t DC_ID               = 0x00C7;  // For SC7
-const uint16_t DC_SER_NO           = 0x0042;  // Don't panic!
 
 // steering wheel parameters
 const byte NEUTRAL_RAW = 0x03;
@@ -83,19 +83,32 @@ const bool NO_STEERING = false;    // set to true to read light, horn, gear cont
 
 // BMS parameters
 const float MAX_CURRENT_THRESH          = 68000; // mA
-const float CONTINUOUS_CURRENT_THRESH   = 40000; // current may exceed this value no more than 7 times in 50 ms
-const int   CURRENT_BUFFER_SIZE         = 10;    // number of current values from BMS stored
+const float CONT_CURRENT_THRESH         = 40000; // current may exceed this value no more than 7 times in a row
 const int   OVERCURRENTS_ALLOWED        = 7;     // max number of overcurrent values allowed before trip
 
+// status flags 1
+const byte HORN_REQ  = 0x01;
+const byte RT_REQ    = 0x02;
+const byte LT_REQ    = 0x04;
+const byte HEAD_REQ  = 0x08;
+const byte HAZ_REQ   = 0x10;
+const byte CON_REQ   = 0x20;
+const byte COFF_REQ  = 0x40;
 
-// driver control errors
-const uint16_t MC_TIMEOUT  = 0x01; // motor controller timed out
-const uint16_t BMS_TIMEOUT = 0x02; // bms timed out
-const uint16_t SW_TIMEOUT  = 0x04; // sw timed out
-const uint16_t TEL_TIMEOUT = 0x08; // telemetry timed out
-const uint16_t SW_BAD_GEAR = 0x10; // bad gearing from steering wheel
-const uint16_t BMS_OVER_CURR = 0x20; // Detected BMS overcurrent, tripped car.
-const uint16_t RESET_MCP2515 = 0x40; // Had to reset the MCP2515
+// status flags 1
+const byte RT_ON      = 0x01;
+const byte LT_ON      = 0x02;
+const byte CRUISE_ON  = 0x04;
+
+// error flags
+const byte MC_TIMEOUT  = 0x01; // motor controller timed out
+const byte BMS_TIMEOUT = 0x02; // bms timed out
+const byte SW_TIMEOUT  = 0x04; // sw timed out
+const byte TEL_TIMEOUT = 0x08; // telemetry timed out
+const byte SW_BAD_GEAR = 0x10; // bad gearing from steering wheel
+const byte BMS_OVER_CURR = 0x20; // detected BMS overcurrent, tripped car.
+const byte RESET_MCP2515 = 0x40; // reset the MCP2515
+const byte RESET_BOARD   = 0x80; // reset Arduino
 
 //----------------------------TYPE DEFINITIONS------------------------//
 
@@ -107,7 +120,7 @@ enum GearState { REVERSE = 0x01, FORWARD = 0x02, NEUTRAL = 0x03, BRAKE = 0x04, R
 /*
  * Enum to represent ignition states
  */
-enum IgnitionState { Ignition_Start = 0x0040, Ignition_Run = 0x0020, Ignition_Park = 0x0010 };
+enum IgnitionState { IGNITION_START = 0x0040, IGNITION_RUN = 0x0020, IGNITION_PARK = 0x0010 };
 
 /*
  * Struct to hold informations about the car state.
@@ -121,7 +134,6 @@ struct CarState {
   uint16_t accelRaw; // raw voltage reading from accel input
   
   // steering wheel info (if we need to go to digital controls on the driver box)
-  bool altSteeringEnable; // true if we are using alternate steering
   byte gearRaw;       // 00 = neutral, 01 = forward, 10 = reverse, 11 = undefined
   bool horn;          // true if driver wants horn on (no toggle)
   bool headlights;    // true if driver wants headlights on (no toggle)
@@ -139,10 +151,8 @@ struct CarState {
   // bms info
   float bmsPercentSOC;                      // percent state of charge of bms
   float bmsCurrent;                         // Current reading from BMS (negative is out of the batteries)
-  int currentBufferIndex;                   // points to index of next value to be written
-  float currentBuffer[CURRENT_BUFFER_SIZE]; // buffer to hold most recent current values from BMS
   int numOvercurrents;                      // number of current values in buffer over threshold
-  bool updateCurrentBufferRequested;        // set to true when a BMS current packet comes in.
+  bool currentAvailable;                    // set to true when a BMS current packet comes in.
   
   // ignition
   IgnitionState ignitionRaw;                // ingition requested by ignition switch
@@ -150,7 +160,6 @@ struct CarState {
   // debugging
   bool wasReset;       // true on initilization, false otherwise
   byte canstat_reg;    // holds value of canstat register on the MCP2515
-  int SW_timer_reset_by;
   
   //-----------DERIVED DATA-----------//
   // pedals
@@ -174,9 +183,11 @@ struct CarState {
   bool rightTurnOn;   // true if we should turn rt signal on
   bool leftTurnOn;    // true if we should turn lt signal on
 
-  // errors
+  // status/errors
   uint16_t canErrorFlags; // keep track of errors with CAN bus
-  uint16_t dcErrorFlags;  // keep track of other errors
+  byte dcErrorFlags;      // keep track of other errors
+  byte statusFlags1;      // first byte of status flags
+  byte statusFlags2;      // second byte of status flags
 };
 
 //----------------------------DATA/VARIABLES---------------------------//
@@ -192,14 +203,15 @@ Metro mcHbTimer(MC_HB_INTERVAL);       // motor controller heartbeat
 Metro swHbTimer(SW_HB_INTERVAL);       // steering wheel heartbeat
 Metro bmsHbTimer(BMS_HB_INTERVAL);     // bms heartbeat
 Metro telHbTimer(TEL_HB_INTERVAL);     // telemetry heartbeat
-Metro dcDriveTimer(DC_DRIVE_INTERVAL); // motor controller send packet
-Metro dcInfoTimer(DC_INFO_INTERVAL);   // steering wheel send packet
-Metro dcHbTimer(DC_HB_INTERVAL);       // driver controls heartbeat
+Metro dcHbTimer(DC_HB_INTERVAL);       // driver controls heartbeat packet
+Metro dcDriveTimer(DC_DRIVE_INTERVAL); // driver controls drive command
+Metro dcPowerTimer(DC_POWER_INTERVAL); // driver controls power command
+Metro dcInfoTimer(DC_INFO_INTERVAL);   // dirver controls info packet
+Metro dcStatusTimer(DC_STAT_INTERVAL); // driver controls status packet
 Metro hazardsTimer(TOGGLE_INTERVAL);   // timer for toggling hazards
 Metro rightTurnTimer(TOGGLE_INTERVAL); // timer for toggling right turn signal
 Metro leftTurnTimer(TOGGLE_INTERVAL);  // timer for toggling left turn signal
 Metro debugTimer(DEBUG_INTERVAL);      // timer for debug output over serial
-Metro dcPowerTimer(DC_POWER_INTERVAL);
 
 // debugging variables
 byte debugStep   = 0;       // split serial out into 3 steps
@@ -234,29 +246,12 @@ void readInputs() {
   }
   
   // read ignition switch
-  state.ignitionRaw = digitalRead(IGNITION_PIN) == LOW ? Ignition_Start : Ignition_Park;
+  state.ignitionRaw = digitalRead(IGNITION_PIN) == LOW ? IGNITION_START : IGNITION_PARK;
   
-  // read steering wheel controls if steering wheel disconnected
-  if (state.altSteeringEnable) {
-    // read gear
-    bool rear_on = (digitalRead(REVERSE_PIN) == LOW);
-    bool neutral_on = (digitalRead(NEUTRAL_PIN) == LOW);
-    if (neutral_on) {
-      state.gearRaw = NEUTRAL_RAW;
-    }
-    else if (rear_on) {
-      state.gearRaw = REVERSE_RAW;
-    }
-    else {
-      state.gearRaw = FORWARD_RAW;
-    }
-    
-    // read lights/horn
-    state.rightTurn = digitalRead(RIGHT_TURN_SW_PIN) == LOW;
-    state.leftTurn = digitalRead(LEFT_TURN_SW_PIN) == LOW;
-    state.headlights = digitalRead(HEADLIGHT_SW_PIN) == LOW;
-    state.hazards = digitalRead(HAZARDS_SW_PIN) == LOW;
-    state.horn = digitalRead(HORN_SW_PIN) == LOW;
+  // modify state if steering wheel disconnected
+  if (state.dcErrorFlags & SW_TIMEOUT) {
+    // set to forward so we can keep driving
+    state.gearRaw = FORWARD_RAW;
 
     // disable cruise control
     state.cruiseCtrl = false;
@@ -284,7 +279,6 @@ void readCAN() {
     else if ((f.id & MASK_Sx00) == SW_BASEADDRESS) { // source is sw
       swHbTimer.reset();
       state.dcErrorFlags &= ~SW_TIMEOUT; // clear flag
-      state.SW_timer_reset_by = f.id;
     }
     else if ((f.id & MASK_Sx00) == TEL_BASEADDRESS) { // source is tel
       telHbTimer.reset();
@@ -321,7 +315,7 @@ void readCAN() {
     else if (f.id == BMS_VOLT_CURR_ID) { // BMS Voltage Current Packet
       BMS_VoltageCurrent packet(f);
       state.bmsCurrent = packet.current;
-      state.updateCurrentBufferRequested = true;
+      state.currentAvailable = true;
     }
   }
 }
@@ -451,49 +445,48 @@ void updateState() {
   }
   
   // check for trip current condition from BMS
-  if (state.updateCurrentBufferRequested)
-  {
-    // This code compares the incoming value with the value in the array that it replaces. If one is overcurrent
-    // and the other is undercurrent, it increments/decrements the counter accordingly.
+  if (state.currentAvailable) {
     float absBMSCurrent = abs(state.bmsCurrent);
 
-    if (absBMSCurrent >= CONTINUOUS_CURRENT_THRESH && 
-        state.currentBuffer[state.currentBufferIndex] < CONTINUOUS_CURRENT_THRESH) { // increment overcurrent counter
+    if (absBMSCurrent >= CONT_CURRENT_THRESH) { // increment overcurrent counter
       state.numOvercurrents++;
     }
-    else if (absBMSCurrent < CONTINUOUS_CURRENT_THRESH && 
-             state.currentBuffer[state.currentBufferIndex] >= CONTINUOUS_CURRENT_THRESH) { // decrement overcurrent counter
-      state.numOvercurrents--;
+    else { // set overcurrent counter to 0
+      state.numOvercurrents = 0;
     }
-
-    //Store the incoming value in the array
-    state.currentBuffer[state.currentBufferIndex] = absBMSCurrent; // store current in buffer
-    state.currentBufferIndex = (state.currentBufferIndex+1) % CURRENT_BUFFER_SIZE; // increment buffer index
     
-    //Check for a trip condition
-    if (absBMSCurrent >= MAX_CURRENT_THRESH ||
-        state.numOvercurrents > OVERCURRENTS_ALLOWED) { // kill car
+    // check for trip condition
+    if (absBMSCurrent >= MAX_CURRENT_THRESH || state.numOvercurrents > OVERCURRENTS_ALLOWED) { // kill car
       state.tripped = true;
       state.dcErrorFlags |= BMS_OVER_CURR;
     }
 
-    //Finally mark this update request handled
-    state.updateCurrentBufferRequested = false;
+    // mark this update request handled
+    state.currentAvailable = false;
   }
   
   // update ignition state
   if (state.tripped) { // kill car
-    state.ignition = Ignition_Park;
+    state.ignition = IGNITION_PARK;
   }
   else {
     state.ignition = state.ignitionRaw;
   }
-  
-  //Enable alternate steering if the SW is disconnected.
-  if (NO_STEERING || state.dcErrorFlags & SW_TIMEOUT)
-    state.altSteeringEnable = true;
-  else
-    state.altSteeringEnable = false;
+
+  // update status flags
+  state.statusFlags1 = 0;
+  if (state.horn) state.statusFlags1 |= HORN_REQ;
+  if (state.rightTurn) state.statusFlags1 |= RT_REQ;
+  if (state.leftTurn) state.statusFlags1 |= LT_REQ;
+  if (state.headlights) state.statusFlags1 |= HEAD_REQ;
+  if (state.hazards) state.statusFlags1 |= HAZ_REQ;
+  if (state.cruiseCtrlOn) state.statusFlags1 |= CON_REQ;
+  if (state.cruiseCtrlOff) state.statusFlags1 |= COFF_REQ;
+
+  state.statusFlags2 = 0;
+  if (state.rightTurnOn) state.statusFlags2 |= RT_ON;
+  if (state.leftTurnOn) state.statusFlags2 |= LT_ON;
+  if (state.cruiseCtrl) state.statusFlags2 |= CRUISE_ON;
 }
 
 /*
@@ -561,18 +554,28 @@ void writeCAN() {
   // check if driver controls info packet needs to be sent
   if (dcInfoTimer.check()) {
     // create and send packet
-    DC_Info packet(state.accelRatio, state.regenRatio, state.brakeEngaged,
-                            state.canErrorFlags, state.dcErrorFlags, state.wasReset, 
-                            ((state.ignition != Ignition_Park) ? true : false), // fuel door, which we use to control the BMS since the ignition switch doesn't work.
-                            state.gear, state.ignition, state.cruiseCtrl);
-                            
+    DC_Info packet(state.ignition, ((state.ignition != IGNITION_PARK) ? true : false),
+      state.accelRatio, state.regenRatio, state.numOvercurrents, state.gear);                            
     bool trysend = canControl.SendVerified(packet, TXBANY);
     
     // reset timer
     if (trysend) 
       dcInfoTimer.reset();
     
-    state.wasReset = false; // clear reset    
+    // clear non-persistent error flags
+    state.dcErrorFlags &= ~RESET_MCP2515;
+    state.dcErrorFlags &= ~RESET_BOARD;
+  }
+
+  // check if driver controls status packet needs to be sent
+  if (dcStatusTimer.check()) {
+    // create and send packet
+    DC_Status packet(state.canErrorFlags, state.dcErrorFlags, 0, 
+      state.statusFlags1, state.statusFlags2);
+    bool trysend = canControl.SendVerified(packet, TXBANY);
+
+    if (trysend)
+      dcStatusTimer.reset();
   }
   
   if (dcPowerTimer.check()) {
@@ -590,6 +593,7 @@ void writeCAN() {
 void checkErrors() {
   //Check the can bus for errors
   canControl.FetchErrors();
+  state.canErrorFlags = canControl.errors;
   
   // Reset the MCP if we are heading towards a bus_off condition
   if (canControl.tec > 200 || canControl.rec > 200) {
@@ -631,15 +635,6 @@ void setup() {
   pinMode(RIGHT_TURN_PIN, OUTPUT);
   pinMode(LEFT_TURN_PIN, OUTPUT);
   pinMode(BOARDLED,OUTPUT);
-  
-  // init steering wheel inputs for use if we lose the steering wheel
-  pinMode(NEUTRAL_PIN, INPUT_PULLUP);
-  pinMode(REVERSE_PIN, INPUT_PULLUP); 
-  pinMode(LEFT_TURN_SW_PIN, INPUT_PULLUP);
-  pinMode(RIGHT_TURN_SW_PIN, INPUT_PULLUP);
-  pinMode(HEADLIGHT_SW_PIN, INPUT_PULLUP);
-  pinMode(HAZARDS_SW_PIN, INPUT_PULLUP);
-  pinMode(HORN_SW_PIN, INPUT_PULLUP);
 
   digitalWrite(BOARDLED,HIGH); // Turn on durring initialization
   
@@ -653,15 +648,12 @@ void setup() {
   state = {}; // init all members to 0
   state.gear = FORWARD;
   state.gearRaw = FORWARD_RAW;
-  state.wasReset = true;
-  state.ignition = Ignition_Park;
-  for (int i = 0; i < CURRENT_BUFFER_SIZE; i++) {
-    state.currentBuffer[i] = 0;
-  }
+  state.dcErrorFlags |= RESET_BOARD;
+  state.ignition = IGNITION_PARK;
   state.tripped = false;
     
   // set the watchdog timer interval
-  WDT_Enable(WDT, 0x2000 | WDT_INTERVAL| ( WDT_INTERVAL << 16 ));
+  WDT_Enable(WDT, 0x2000 | WDT_INTERVAL | ( WDT_INTERVAL << 16 ));
   
   // reset timers
   mcHbTimer.reset();
@@ -714,7 +706,6 @@ void loop() {
   // debugging printout
   if (DEBUG && debugTimer.check()) {
     
-    /************************ TEMP CAN DEBUGGING VARIABLES (DELETE LATER)******/
     byte Txstatus[3] = {0,0,0};
     Txstatus[0] = canControl.controller.Read(TXB0CTRL);
     Txstatus[1] = canControl.controller.Read(TXB1CTRL);
@@ -731,30 +722,8 @@ void loop() {
     Serial.print("CANCTRL: ");
     Serial.println(canctrl, BIN);
     Serial.print("CANSTAT: ");
-    Serial.println(state.canstat_reg, BIN);
-    Serial.println("");
-
-    Serial.print("Gear: ");
-    switch (state.gear) {
-    case BRAKE:
-      Serial.println("BRAKE");
-      break;
-    case FORWARD:
-      Serial.println("FORWARD");
-      break;
-    case REVERSE:
-      Serial.println("REVERSE");
-      break;
-    case REGEN:
-      Serial.println("REGEN");
-      break;
-    case NEUTRAL:
-      Serial.println("NEUTRAL");
-      break;
-    }
-    Serial.print("Gear Raw: ");
-    Serial.println(state.gearRaw);    
-    Serial.print("Average Loop time (us): ");
+    Serial.println(state.canstat_reg, BIN);   
+    Serial.print("Loop time (us): ");
     Serial.println(loopSumTime / loopCount);
     Serial.print("System time: ");
     Serial.println(millis());
@@ -831,7 +800,9 @@ void loop() {
         Serial.print("CAN error: ");
         Serial.println(canControl.errors, HEX);
         Serial.print("TEC/REC: ");
-        Serial.print(canControl.tec); Serial.print(" / "); Serial.println(canControl.rec);
+        Serial.print(canControl.tec);
+        Serial.print(" / "); 
+        Serial.println(canControl.rec);
         Serial.print("Interrupt Counter: ");
         Serial.println(canControl.int_counter);
         Serial.print("RX buffer counter: ");
@@ -840,17 +811,8 @@ void loop() {
         Serial.println(state.dcErrorFlags, HEX);
         Serial.print("BMS Current: ");
         Serial.println(state.bmsCurrent);
-        if (state.SW_timer_reset_by != 0) {
-          Serial.print("SW RESET BY: ");
-          Serial.println(state.SW_timer_reset_by, HEX);
-          state.SW_timer_reset_by = 0;
-        }
         break;
     }
-    
-    Serial.print("System time: ");
-    Serial.println(millis());
-    Serial.println();
     
     debugStep = (debugStep+1) % 3;
     debugTimer.reset();
@@ -859,7 +821,5 @@ void loop() {
     loopSumTime = 0;
     loopCount = 0;
   }
-  // Reset canErrorFlags after each loop.
-  state.canErrorFlags = 0;
 }
 

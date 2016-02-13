@@ -9,7 +9,10 @@ TODOS:
 test arduino library
 restructure directory (CAN)
 experiment with ignition switch
-test teensy
-have steering wheel report liveness of DC/MC/BMS/TEL
+test new status flags on CAN
+explicit init of all state fields
+test metro mini
 impl lap timer
-test cruise control
+test power control
+test overcurrent (now consecutive only)
+piecewise accel (small percent -> small change, large percent -> large change)

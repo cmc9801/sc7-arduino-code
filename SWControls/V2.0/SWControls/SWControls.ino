@@ -65,7 +65,7 @@ const int ltp =   3;  // left turn
 const int rtp =   A2; // right turn
 const int conp =  0;  // cruise on
 const int coffp = 0;  // cruise off
-const do_not_run_set_pins;
+//const do_not_run_set_pins;
 
 // CAN constants
 const byte CAN_CS = 10;
@@ -95,7 +95,7 @@ struct LCD{
 
 // timers
 Metro switch_timer = Metro(100); // switch read wait
-Metro CAN_TX = Metro(1000); // can tx wait (if switch states unchanged)
+Metro CAN_TX = Metro(500); // can tx wait (if switch states unchanged)
 Metro CAN_RX = Metro(1000); // can read wait
 Metro notif_timer = Metro(500); // notification display duration
 Metro display_timer = Metro(500); // display refresh wait (if no change)
