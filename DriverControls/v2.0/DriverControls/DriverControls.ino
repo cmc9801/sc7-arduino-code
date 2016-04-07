@@ -73,6 +73,7 @@ const float    MAX_MOTOR_CURRENT   = 1.0;     // sent to the motor to set the ma
 const float    GEAR_CHANGE_CUTOFF  = 5.0f;    // cannot change gear unless velocity is below this threshold
 const float    M_PER_SEC_TO_MPH    = 2.237f;  // conversion factor from m/s to mph
 const bool     ENABLE_REGEN        = false;   // flag to enable/disable regen
+const bool     ENABLE_CRUISE_CTRL  = true;    // flag to enable/disable cruise control
 
 // steering wheel parameters
 const byte NEUTRAL_RAW = 0x03;
@@ -428,6 +429,9 @@ void updateState() {
   }
   if (state.gear != FORWARD || state.cruiseCtrlOff) { // not in forward or driver wants cruise off
    state.cruiseCtrl = false;
+  }
+  if (!ENABLE_CRUISE_CTRL) { // cruise control disabled
+    state.cruiseCtrl = false;
   }
   
   // update current values to be sent to motor controller
