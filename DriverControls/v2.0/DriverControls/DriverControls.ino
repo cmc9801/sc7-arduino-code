@@ -28,6 +28,7 @@ const byte LEFT_TURN_PIN  = 12;
 const byte HEADLIGHT_PIN  = 10;
 const byte BRAKELIGHT_PIN = 13;
 const byte BOARDLED       = 13;
+const byte GEAR_PIN       = 42;
 
 // CAN parameters
 const uint16_t BAUD_RATE = 1000;
@@ -73,7 +74,8 @@ const float    MAX_MOTOR_CURRENT   = 1.0;     // sent to the motor to set the ma
 const float    GEAR_CHANGE_CUTOFF  = 5.0f;    // cannot change gear unless velocity is below this threshold
 const float    M_PER_SEC_TO_MPH    = 2.237f;  // conversion factor from m/s to mph
 const bool     ENABLE_REGEN        = false;   // flag to enable/disable regen
-const bool     ENABLE_CRUISE_CTRL  = true;    // flag to enable/disable cruise control
+const bool     ENABLE_CRUISE_CTRL  = false;   // flag to enable/disable cruise control
+const bool     ENABLE_GEAR_SWITCH  = true;    // flag to enable/disable gear switch directly connected to driver controls
 
 // steering wheel parameters
 const byte NEUTRAL_RAW = 0x03;
@@ -256,6 +258,11 @@ void readInputs() {
 
     // disable cruise control
     state.cruiseCtrl = false;
+  }
+
+  // if using gear switch, update gear state
+  if (ENABLE_GEAR_SWITCH) {
+    state.gearRaw = (digitalRead(GEAR_PIN) == LOW) ? FORWARD_RAW : REVERSE_RAW;
   }
 }
 
@@ -639,6 +646,9 @@ void setup() {
   pinMode(RIGHT_TURN_PIN, OUTPUT);
   pinMode(LEFT_TURN_PIN, OUTPUT);
   pinMode(BOARDLED,OUTPUT);
+  if (ENABLE_GEAR_SWITCH) {
+    pinMode(GEAR_PIN, INPUT_PULLUP);
+  }
 
   digitalWrite(BOARDLED,HIGH); // Turn on durring initialization
   
