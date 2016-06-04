@@ -637,6 +637,7 @@ void checkErrors() {
 //--------------------------MAIN FUNCTIONS---------------------------//
 
 void setup() {
+  delay(2000);
   // setup pin I/O
   pinMode(IGNITION_PIN, INPUT_PULLUP);
   pinMode(BRAKE_PIN, INPUT_PULLUP);
@@ -667,7 +668,7 @@ void setup() {
   state.tripped = false;
     
   // set the watchdog timer interval
-  WDT_Enable(WDT, 0x2000 | WDT_INTERVAL | ( WDT_INTERVAL << 16 ));
+  WDT_Enable(WDT, 0x2000 | WDT_INTERVAL | ( WDT_INTERVAL << 16 )); 
   
   // reset timers
   mcHbTimer.reset();

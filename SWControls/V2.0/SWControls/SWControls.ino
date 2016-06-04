@@ -28,7 +28,7 @@ void checkProgrammingMode();
 #define FWD_GEAR BIT(0)
 #define REV_GEAR BIT(1)
 #define HEADLIGHT BIT(2)
-#define HAZARDLIGHT BIT(3)
+#define IGNITION BIT(3)
 #define HORN BIT(5)
 #define LEFT_TURN BIT(6)
 #define RIGHT_TURN BIT(7)
@@ -49,7 +49,7 @@ void checkProgrammingMode();
 const int V = 6;        // velocity (from CAN)
 const int GEAR = 13;    // forward/reverse/neutral
 const int LT = 8;       // lap timer
-const int LIGHT = 11;   // headlights/hazardlights/no lights
+const int LIGHT = 11;   // headlights/no lights
 const int RIGHT = 15;   // right turn signals
 const int LEFT = 1;     // left turn signals
 const int TELM = 0;     // telemetry indicator
@@ -58,11 +58,11 @@ const int TELM = 0;     // telemetry indicator
 const int fgp =   6;  // forward gear
 const int rgp =   7;  // reverse gear
 const int hp =    9;  // headlights
-const int hzp =   8;  // hazardlights
+const int ignp =  8;  // ignition
 const int lapp =  4;  // lap timer reset
 const int hornp = 5;  // horn
 const int ltp =   3;  // left turn
-const int rtp =   A2; // right turn
+const int rtp =  A2;  // right turn
 const int conp =  0;  // cruise on
 const int coffp = 0;  // cruise off
 //const do_not_run_set_pins;
@@ -83,7 +83,7 @@ struct LCD{
   char geardisplay;       // 'F' = forward, 'R' = reverse, 'N' = neutral
   char ccdisplay;         // 'C' = cruise on, ' ' = cruise off
   char telemetrydisplay;  // 'T' = telemetry on, ' ' = telemetry off
-  String lightsdisplay;   // "H" = headlights, "HZ" = hazardlights, " " = no lights
+  char lightsdisplay;   // 'H' = headlights, ' ' = no lights
   float Veldisplay;       // velocity (from CAN)
   bool LTdisplay;         // left turn?
   bool RTdisplay;         // right turn?
@@ -134,7 +134,7 @@ void setup() {
   pinMode(fgp, INPUT_PULLUP);
   pinMode(rgp, INPUT_PULLUP);
   pinMode(hp, INPUT_PULLUP);
-  pinMode(hzp, INPUT_PULLUP);
+  pinMode(ignp, INPUT_PULLUP);
   pinMode(lapp, INPUT_PULLUP);
   pinMode(hornp, INPUT_PULLUP);
   pinMode(ltp, INPUT_PULLUP);
@@ -147,7 +147,7 @@ void setup() {
   screen.begin();
   delay(500); // Allow MCP2515 to run for 128 cycles and LCD to boot
 
-  // hazards must be set to on to allow programming
+  // ignition must be set to on to allow programming
   checkProgrammingMode();
 
   // initialize the pin states
@@ -172,7 +172,8 @@ void setup() {
   steering_wheel.lapsecdisplay = 0;
   steering_wheel.geardisplay = ' ';
   steering_wheel.telemetrydisplay = ' ';
-  steering_wheel.lightsdisplay = "  ";
+  steering_wheel.lightsdisplay = ' ';
+  steering_wheel.ccdisplay = ' ';
   steering_wheel.Veldisplay = 0.0;
   steering_wheel.LTdisplay = false;
   steering_wheel.RTdisplay = false;
@@ -185,18 +186,18 @@ void setup() {
 }
 
 /*
- * This function runs at startup and checks whether the headlights/hazards switch is set to hazards.
+ * This function runs at startup and checks whether the ignition switch is on.
  * If it is, the board is in "Programming Mode". For some reason, the pro micro won't program corectly
  * while running in the main loop. It is necessary to put the micro into this state before programming.
  */
 void checkProgrammingMode() {    
-  while (digitalRead(hzp) == LOW) 
+  while (digitalRead(ignp) == LOW) 
   {
-    // do nothing if hazards is on, allowing programming to happen.
+    // do nothing if ignition is on, allowing programming to happen.
     // this delay must go before the screen printing, for some random reason.
     // also, do not call screen.clear in here.
     screen.home();
-    screen.print("Turn off Hazards to Exit PrgMd  ");
+    screen.print("Turn off Ignition to Exit PrgMd  ");
     screen.update();
     delay(500); 
   }
@@ -216,13 +217,10 @@ inline void initializePins() {
   }
   
   if(digitalRead(hp) == LOW) {
-    steering_wheel.lightsdisplay = "H ";
-  }
-  else if(digitalRead(hzp) == LOW) {
-    steering_wheel.lightsdisplay = "HZ";
+    steering_wheel.lightsdisplay = 'H';
   }
   else {
-    steering_wheel.lightsdisplay = "  ";
+    steering_wheel.lightsdisplay = ' ';
   }
 }
 
@@ -243,7 +241,7 @@ void loop() {
     switchBitFromPin(fgp, byte0, FWD_GEAR);
     switchBitFromPin(rgp, byte0, REV_GEAR);
     switchBitFromPin(hp, byte0, HEADLIGHT);
-    switchBitFromPin(hzp, byte0, HAZARDLIGHT);
+    switchBitFromPin(ignp, byte0, IGNITION);
     switchBitFromPin(ltp, byte0, LEFT_TURN);
     switchBitFromPin(rtp, byte0, RIGHT_TURN);
     switchBitFromPin(conp, byte1, CRUISE_ON);
@@ -287,18 +285,13 @@ void loop() {
     }
 
     // update lights info
-    if((~byte0 & HEADLIGHT) && steering_wheel.lightsdisplay != "H "){
-      steering_wheel.lightsdisplay = "H ";
+    if((~byte0 & HEADLIGHT) && steering_wheel.lightsdisplay != 'H'){
+      steering_wheel.lightsdisplay = 'H';
       steering_wheel.notification = String("Headlights");
       notif_timer.reset();
     }
-    if((~byte0 & HAZARDLIGHT) && steering_wheel.lightsdisplay != "HZ"){
-      steering_wheel.lightsdisplay = "HZ";
-      steering_wheel.notification = String("Hazardlights");
-      notif_timer.reset();
-    } 
-    if(!(~byte0 & (HAZARDLIGHT|HEADLIGHT)) && steering_wheel.lightsdisplay != "  "){
-      steering_wheel.lightsdisplay = "  ";
+    if(!(~byte0 & HEADLIGHT) && steering_wheel.lightsdisplay != ' '){
+      steering_wheel.lightsdisplay = ' ';
       steering_wheel.notification = String("All lights off");
       notif_timer.reset();
     }
@@ -445,11 +438,11 @@ inline void defaultdisplay(){
   screen.print(steering_wheel.lightsdisplay);
   screen.setCursor(2,TELM);
   screen.print(steering_wheel.telemetrydisplay);
-  if(steering_wheel.LTdisplay || steering_wheel.lightsdisplay=="HZ"){
+  if(steering_wheel.LTdisplay){
     blnk(LEFT,steering_wheel.turnsignal_on);
   }
 
-  if(steering_wheel.RTdisplay || steering_wheel.lightsdisplay=="HZ"){
+  if(steering_wheel.RTdisplay){
     blnk(RIGHT,steering_wheel.turnsignal_on);
   }
 }
