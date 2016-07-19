@@ -59,12 +59,12 @@ const int fgp =   6;  // forward gear
 const int rgp =   7;  // reverse gear
 const int hp =    9;  // headlights
 const int ignp =  8;  // ignition
-const int lapp =  4;  // lap timer reset
+const int lapp =  A1;  // lap timer reset
 const int hornp = 5;  // horn
 const int ltp =   3;  // left turn
-const int rtp =  A2;  // right turn
-const int conp =  0;  // cruise on
-const int coffp = 0;  // cruise off
+const int rtp =   A2;  // right turn
+const int conp =  4;  // cruise on
+const int coffp = A0;  // cruise off
 //const do_not_run_set_pins;
 
 // CAN constants
